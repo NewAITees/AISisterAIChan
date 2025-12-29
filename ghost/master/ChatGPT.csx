@@ -28,13 +28,13 @@ public class ChatGPTTalk
                 throw new InvalidOperationException("stream should be true");
 
             var result = "";
-            var endpoint = "https://api.openai.com/v1/chat/completions";
+            var endpoint = "http://localhost:11434/v1/chat/completions";
 
             var json = JsonConvert.SerializeObject(chatGPTRequest);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
             using (var request = new HttpRequestMessage(HttpMethod.Post, endpoint))
             {
-                request.Headers.Add("Authorization", $"Bearer {apiKey}");
+                // Ollama doesn't need authorization header
                 request.Content = content;
 
                 var client = new HttpClient();

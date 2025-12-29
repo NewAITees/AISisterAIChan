@@ -15,9 +15,6 @@ partial class AISisterAIChanGhost : Ghost
 
     private string OpenMenu()
     {
-        if(string.IsNullOrEmpty(((SaveData)SaveData).APIKey))
-            return ChangeOpenAIAPITalk();
-
         const string RAND = "なにか話して";
         const string COMMUNICATE = "話しかける";
         const string CHANGEPROFILE = "プロフィールを変更する";
@@ -53,7 +50,6 @@ partial class AISisterAIChanGhost : Ghost
     }
 
     private string SettingsTalk(){
-        const string CHANGE_OPENAI_API = "OpenAIのAPIキーを変更する";
         const string CHANGE_RANDOMTALK_INTERVAL = "ランダムトークの頻度を変更する";
         const string CHANGE_CHOICE_COUNT = "選択肢の数を変更する";
         string CHANGE_RANDOM_IDLING_SURFACE = "定期的に身じろぎする（現在："+(((SaveData)SaveData).IsRandomIdlingSurfaceEnabled ? "有効" : "無効")+"）";
@@ -62,8 +58,6 @@ partial class AISisterAIChanGhost : Ghost
         return new TalkBuilder()
         .Append("設定を変更するね。")
         .LineFeed()
-        .HalfLine()
-        .Marker().AppendChoice(CHANGE_OPENAI_API).LineFeed()
         .HalfLine()
         .Marker().AppendChoice(CHANGE_RANDOMTALK_INTERVAL).LineFeed()
         .Marker().AppendChoice(CHANGE_CHOICE_COUNT).LineFeed()
@@ -75,9 +69,7 @@ partial class AISisterAIChanGhost : Ghost
         .BuildWithAutoWait()
         .ContinueWith(id=>
         {
-            if (id == CHANGE_OPENAI_API)
-                return ChangeOpenAIAPITalk();
-            else if (id == CHANGE_RANDOMTALK_INTERVAL)
+            if (id == CHANGE_RANDOMTALK_INTERVAL)
                 return ChangeRandomTalkIntervalTalk();
             else if (id == CHANGE_CHOICE_COUNT)
                 return ChangeChoiceCountTalk();

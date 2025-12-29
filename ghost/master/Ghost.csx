@@ -208,7 +208,7 @@ partial class AISisterAIChanGhost : Ghost
         var request = new ChatGPTRequest()
         {
             stream = true,
-            model = "gpt-3.5-turbo",
+            model = "gpt-oss:20b",
             messages = new ChatGPTMessage[]
             {
                 new ChatGPTMessage()
