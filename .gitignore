@@ -2,4 +2,6 @@ ghost/master/profile/
 shell/master/profile/
 ghost/master/savedata.json
 ghost/master/log/
+ghost/master/*_script_log.json
+ghost/master/*_error.json
 .vs/
