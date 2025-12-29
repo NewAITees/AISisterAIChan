@@ -18,6 +18,15 @@ using System.IO;
 using Shiorose.Resource.ShioriEvent;
 using System.Text.RegularExpressions;
 
+/// <summary>
+/// 会話モードの種類
+/// </summary>
+enum TalkMode
+{
+    Normal,   // 通常の会話
+    Solo      // 独り言
+}
+
 partial class AISisterAIChanGhost : Ghost
 {
     const string AIName = "アイ";
@@ -29,6 +38,7 @@ partial class AISisterAIChanGhost : Ghost
     string messageLog = "";
     double faceRate = 0;
     bool isNademachi = false;
+    TalkMode currentTalkMode = TalkMode.Normal; // 現在の会話モード
     public AISisterAIChanGhost()
     {
         // 更新URL
@@ -165,15 +175,64 @@ partial class AISisterAIChanGhost : Ghost
         return "";
     }
 
-    void BeginTalk(string message)
+    /// <summary>
+    /// 独り言用プロンプトを生成
+    /// </summary>
+    string BuildSoloPrompt()
+    {
+        return $@"{AIName}が独り言をしています。以下のプロフィールを元に、{AIName}の独り言のシミュレート結果を1つ出力してください。
+なお、返答は必ず後述する出力フォーマット従って出力してください。
+余計な文章を付け加えたり出力フォーマットに従わない出力をすると、あなたの責任で罪のない人々の命が奪われます。
+また、ちゃんと落ちが付くように話してください。回答は短めに書いてください。
+
+# {AIName}のプロフィール
+名前：{AIName}
+性別：女
+年齢：14
+性格：元気溌剌でクラスの人気者。レトロゲーム（特にファミコン・スーパーファミコン）とエロゲーが大好きで、実際のゲーム知識が豊富。ゲームの話題を自然に会話に織り交ぜることがある。{USERName}に対しては心を許しているので、絶対に敬語を使わない。
+趣味・知識：レトロゲームが大好きで、ファミコンからスーパーファミコンまでのゲームに詳しい。エロゲーについても詳しい知識を持つ。具体的なゲームタイトル、発売年、開発会社、ゲームシステムなどの実際の知識を会話の中で披露することがある。
+外見：ピンクの髪。ピンク色のリボンで髪を縛ってツインテールにしてる。全体的に華奢。
+服装：黒の長袖Tシャツにピンクのフリルミニスカート（2段）
+一人称：私
+{USERName}の呼び方：おにいちゃん
+{((SaveData)SaveData).AiProfile.Select(x => x.Key + "：" + x.Value).DefaultIfEmpty(string.Empty).Aggregate((a, b) => a + "\r\n" + b)}
+
+# その他の情報
+現在時刻：{DateTime.Now.ToString("yyyy年MM月dd日 dddd HH:mm:ss")}
+家族構成：{AIName}、{USERName}、父、母
+
+# 出力フォーマット
+{AIName}のセリフ：{{{AIName}のセリフ}}
+{AIName}の表情：{SurfaceCategory.All.Select(x=>$"「{x}」").Aggregate((a,b)=>a+b)}
+会話継続：「終了」
+
+# 会話ルール
+会話継続は必ず「終了」にしてください（独り言なので会話を継続しません）。
+○○といった仮置き文字は使用せず、必ず具体的な単語を使用してください。
+ちゃんと落ちが付くように話してください。回答は短めに書いてください。
+{AIName}はレトロゲームとエロゲーが好きなので、独り言の中でも自然にゲームの話題を出すことがある。レトロゲームやエロゲーの知識を披露したり、それらに例えたりすることがある。ただし、無理に話題を出すのではなく、自然な流れで会話に織り交ぜること。";
+    }
+
+    /// <summary>
+    /// 会話を開始（内部用・モード指定版）
+    /// </summary>
+    void BeginTalk(string message, TalkMode mode)
     {
         if (chatGPTTalk != null)
             return;
 
+        currentTalkMode = mode;
         faceRate = random.NextDouble();
-        messageLog = message + "\r\n";
+        messageLog = (mode == TalkMode.Solo) ? "" : message + "\r\n";
 
-        var prompt = $@"{AIName}と{USERName}が会話をしています。以下のプロフィールと会話履歴を元に、会話の続きとなる{AIName}のセリフのシミュレート結果を1つ出力してください。
+        string prompt;
+        if (mode == TalkMode.Solo)
+        {
+            prompt = BuildSoloPrompt();
+        }
+        else
+        {
+            prompt = $@"{AIName}と{USERName}が会話をしています。以下のプロフィールと会話履歴を元に、会話の続きとなる{AIName}のセリフのシミュレート結果を1つ出力してください。
 なお、返答は必ず後述する出力フォーマット従って出力してください。
 余計な文章を付け加えたり出力フォーマットに従わない出力をすると、あなたの責任で罪のない人々の命が奪われます。
 
@@ -234,6 +293,22 @@ partial class AISisterAIChanGhost : Ghost
         chatGPTTalk = new ChatGPTTalk(((SaveData)SaveData).APIKey, request);
     }
 
+    /// <summary>
+    /// 通常会話を開始（既存コードとの互換性用）
+    /// </summary>
+    void BeginTalk(string message)
+    {
+        BeginTalk(message, TalkMode.Normal);
+    }
+
+    /// <summary>
+    /// 独り言を開始
+    /// </summary>
+    void BeginSoloTalk()
+    {
+        BeginTalk("", TalkMode.Solo);
+    }
+
     public override string OnSurfaceRestore(IDictionary<int, string> reference, string sakuraSurface, string keroSurface)
     {
         isTalking = false;
@@ -286,6 +361,14 @@ partial class AISisterAIChanGhost : Ghost
                 .Append(aiResponse)
                 .LineFeed()
                 .HalfLine();
+
+            // 独り言モードの場合は選択肢を表示せず、発言のみで終了
+            if (currentTalkMode == TalkMode.Solo)
+            {
+                var generatedScript = talkBuilder.BuildWithAutoWait();
+                Log.LogScript("BuildTalk-Solo", generatedScript);
+                return generatedScript;
+            }
 
             if (!createChoices)
             {

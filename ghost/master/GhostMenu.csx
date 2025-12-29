@@ -15,6 +15,7 @@ partial class AISisterAIChanGhost : Ghost
 
     private string OpenMenu()
     {
+        const string SOLO_TALK = "独り言をする";
         const string RAND = "なにか話して";
         const string COMMUNICATE = "話しかける";
         const string CHANGEPROFILE = "プロフィールを変更する";
@@ -22,6 +23,8 @@ partial class AISisterAIChanGhost : Ghost
         const string CANCEL = "なんでもない";
 
         return new TalkBuilder().Append("どうしたの？").LineFeed()
+                                .HalfLine()
+                                .Marker().AppendChoice(SOLO_TALK).LineFeed()
                                 .HalfLine()
                                 .Marker().AppendChoice(RAND).LineFeed()
                                 .Marker().AppendChoice(COMMUNICATE).LineFeed()
@@ -35,6 +38,8 @@ partial class AISisterAIChanGhost : Ghost
                                 {
                                     switch (id)
                                     {
+                                        case SOLO_TALK:
+                                            return OnSoloTalk();
                                         case RAND:
                                             return OnRandomTalk();
                                         case COMMUNICATE:
@@ -272,5 +277,11 @@ partial class AISisterAIChanGhost : Ghost
             return text.Substring(0, maxLength) + "…";
         else
             return text;
+    }
+
+    private string OnSoloTalk()
+    {
+        BeginSoloTalk();
+        return "";
     }
 }
