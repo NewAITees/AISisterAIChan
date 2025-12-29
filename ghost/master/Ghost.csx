@@ -430,6 +430,7 @@ partial class AISisterAIChanGhost : Ghost
     {
         isTalking = false;
         currentTalkMode = TalkMode.Normal;
+        isManzaiMode = false; // 漫才モードもリセットして状態を同期
         return base.OnSurfaceRestore(reference, sakuraSurface, keroSurface);
     }
 
@@ -648,11 +649,17 @@ partial class AISisterAIChanGhost : Ghost
                                 BeginTalk($"{log}{AIName}：{aiResponse}\r\n{USERName}：{input}");
                                 return "";
                             });
+                        if (id == END_TALK)
+                        {
+                            isTalking = false; // 会話終了時にフラグをリセット
+                            return "";
+                        }
                         return "";
                     });
         }
         catch (Exception e)
         {
+            isTalking = false; // エラー発生時にもフラグをリセット
             Log.LogError("BuildTalk", e);
             var errorScript = new TalkBuilder()
                 .Append("ごめん、エラーが発生しちゃった...")
@@ -813,8 +820,12 @@ partial class AISisterAIChanGhost : Ghost
                 return talkBuilder.Append($"\\_q...").LineFeed().Build();
             }
 
-            // 落ちがついたかチェック
-            var hasEnding = response.Contains("落ち：あり") || response.Contains("落ち：「あり」");
+            // 落ちがついたかチェック（正規表現で柔軟に判定）
+            // 「落ち：」の後に「あり」が続くかチェック（引用符の種類、空白、句読点の違いを許容）
+            // マッチ例: "落ち：あり", "落ち：「あり」", "落ち: あり", "落ち： 「あり」" など
+            // パターン: "落ち" + 任意の空白 + "："または":" + 任意の空白 + オプションの引用符（全角・半角・日本語） + "あり" + オプションの引用符
+            var endingPattern = new Regex(@"落ち\s*[：:]\s*[「""'「」]?\s*あり\s*[」""'「」]?", RegexOptions.IgnoreCase | RegexOptions.Multiline);
+            var hasEnding = endingPattern.IsMatch(response);
 
             // 選択肢の構築
             DeferredEventTalkBuilder deferredEventTalkBuilder;
@@ -893,6 +904,7 @@ partial class AISisterAIChanGhost : Ghost
                 else if (id == END_TALK)
                 {
                     isManzaiMode = false;
+                    isTalking = false; // 会話終了時にフラグをリセット
                     return "";
                 }
                 return "";
@@ -900,6 +912,7 @@ partial class AISisterAIChanGhost : Ghost
         }
         catch (Exception e)
         {
+            isTalking = false; // エラー発生時にもフラグをリセット
             Log.LogError("BuildManzaiTalk", e);
             var errorScript = new TalkBuilder()
                 .Append("ごめん、エラーが発生しちゃった...")

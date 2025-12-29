@@ -1,3 +1,4 @@
+#load "SurfaceCategory.csx"
 #load "Surfaces.csx"
 using System;
 using System.Collections.Generic;
@@ -81,11 +82,26 @@ public class KeroSurfaces
         // 既存のSurfacesクラスを使用
         try
         {
-            return Surfaces.Of(category).GetSurfaceFromRate(rate);
+            var surfaces = Surfaces.Of(category);
+            return surfaces.GetSurfaceFromRate(rate);
         }
-        catch
+        catch (KeyNotFoundException ex)
         {
-            return 0; // デフォルト
+            // カテゴリが存在しない場合の詳細ログ
+            Log.LogError("KeroSurfaces.GetSurfaceFromCategory", $"Category '{category}' not found in Surfaces dictionary: {ex.Message}");
+            return 0; // デフォルトサーフェス
+        }
+        catch (NullReferenceException ex)
+        {
+            // Surfacesクラスが初期化されていない可能性
+            Log.LogError("KeroSurfaces.GetSurfaceFromCategory", $"Surfaces class may not be initialized: {ex.Message}");
+            return 0; // デフォルトサーフェス
+        }
+        catch (Exception ex)
+        {
+            // その他の予期しないエラー
+            Log.LogError("KeroSurfaces.GetSurfaceFromCategory", ex);
+            return 0; // デフォルトサーフェス
         }
     }
 
@@ -96,11 +112,26 @@ public class KeroSurfaces
     {
         try
         {
-            return Surfaces.Of(category).GetRaodomSurface();
+            var surfaces = Surfaces.Of(category);
+            return surfaces.GetRaodomSurface();
         }
-        catch
+        catch (KeyNotFoundException ex)
         {
-            return 0; // デフォルト
+            // カテゴリが存在しない場合の詳細ログ
+            Log.LogError("KeroSurfaces.GetRandomSurfaceFromCategory", $"Category '{category}' not found in Surfaces dictionary: {ex.Message}");
+            return 0; // デフォルトサーフェス
+        }
+        catch (NullReferenceException ex)
+        {
+            // Surfacesクラスが初期化されていない可能性
+            Log.LogError("KeroSurfaces.GetRandomSurfaceFromCategory", $"Surfaces class may not be initialized: {ex.Message}");
+            return 0; // デフォルトサーフェス
+        }
+        catch (Exception ex)
+        {
+            // その他の予期しないエラー
+            Log.LogError("KeroSurfaces.GetRandomSurfaceFromCategory", ex);
+            return 0; // デフォルトサーフェス
         }
     }
 }
