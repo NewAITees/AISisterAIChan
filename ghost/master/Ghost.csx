@@ -313,6 +313,7 @@ partial class AISisterAIChanGhost : Ghost
     public override string OnSurfaceRestore(IDictionary<int, string> reference, string sakuraSurface, string keroSurface)
     {
         isTalking = false;
+        currentTalkMode = TalkMode.Normal;
         return base.OnSurfaceRestore(reference, sakuraSurface, keroSurface);
     }
 
@@ -397,7 +398,7 @@ partial class AISisterAIChanGhost : Ghost
                     };
 
                     var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
-                    File.WriteAllText("normal_waiting_script_log.json", json, encoding);
+                    File.WriteAllText("log/normal_waiting_script_log.json", json, encoding);
                 }
                 catch (Exception ex)
                 {
@@ -414,7 +415,7 @@ partial class AISisterAIChanGhost : Ghost
                             innerException = ex.InnerException?.ToString() ?? ""
                         };
                         var errorJson = Newtonsoft.Json.JsonConvert.SerializeObject(errorLog, Newtonsoft.Json.Formatting.Indented);
-                        File.WriteAllText("normal_waiting_error.json", errorJson, encoding);
+                        File.WriteAllText("log/normal_waiting_error.json", errorJson, encoding);
                     }
                     catch { }
                 }
@@ -482,7 +483,7 @@ partial class AISisterAIChanGhost : Ghost
                 };
 
                 var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
-                File.WriteAllText("normal_choices_script_log.json", json, encoding);
+                File.WriteAllText("log/normal_choices_script_log.json", json, encoding);
             }
             catch (Exception ex)
             {
@@ -499,7 +500,7 @@ partial class AISisterAIChanGhost : Ghost
                         innerException = ex.InnerException?.ToString() ?? ""
                     };
                     var errorJson = Newtonsoft.Json.JsonConvert.SerializeObject(errorLog, Newtonsoft.Json.Formatting.Indented);
-                    File.WriteAllText("normal_choices_error.json", errorJson, encoding);
+                    File.WriteAllText("log/normal_choices_error.json", errorJson, encoding);
                 }
                 catch { }
             }

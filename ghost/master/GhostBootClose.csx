@@ -44,7 +44,7 @@ partial class AISisterAIChanGhost : Ghost
                 };
 
                 var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
-                File.WriteAllText("boot_script_log.json", json, encoding);
+                File.WriteAllText("log/boot_script_log.json", json, encoding);
             }
             catch (Exception ex)
             {
@@ -111,7 +111,7 @@ partial class AISisterAIChanGhost : Ghost
                 };
 
                 var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
-                File.WriteAllText("close_script_log.json", json, encoding);
+                File.WriteAllText("log/close_script_log.json", json, encoding);
             }
             catch (Exception ex)
             {
