@@ -18,6 +18,7 @@ partial class AISisterAIChanGhost : Ghost
         const string SOLO_TALK = "独り言をする";
         const string RAND = "なにか話して";
         const string COMMUNICATE = "話しかける";
+        const string MANZAI_MODE = "漫才モード";
         const string CHANGEPROFILE = "プロフィールを変更する";
         const string SETTINGS = "設定を変えたい";
         const string CANCEL = "なんでもない";
@@ -28,6 +29,7 @@ partial class AISisterAIChanGhost : Ghost
                                 .HalfLine()
                                 .Marker().AppendChoice(RAND).LineFeed()
                                 .Marker().AppendChoice(COMMUNICATE).LineFeed()
+                                .Marker().AppendChoice(MANZAI_MODE).LineFeed()
                                 .HalfLine()
                                 .Marker().AppendChoice(CHANGEPROFILE).LineFeed()
                                 .Marker().AppendChoice(SETTINGS).LineFeed()
@@ -41,9 +43,14 @@ partial class AISisterAIChanGhost : Ghost
                                         case SOLO_TALK:
                                             return OnSoloTalk();
                                         case RAND:
+                                            isManzaiMode = false;
                                             return OnRandomTalk();
                                         case COMMUNICATE:
+                                            isManzaiMode = false;
                                             return new TalkBuilder().Append("なになに？").AppendCommunicate().Build();
+                                        case MANZAI_MODE:
+                                            BeginManzai();
+                                            return "";
                                         case CHANGEPROFILE:
                                             return ChangeProfileTalk();
                                         case SETTINGS:

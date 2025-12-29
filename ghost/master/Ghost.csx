@@ -6,6 +6,7 @@
 #load "GhostMenu.csx"
 #load "Surfaces.csx"
 #load "Log.csx"
+#load "KeroCharacter.csx"
 using Shiorose;
 using Shiorose.Resource;
 using Shiorose.Support;
@@ -24,7 +25,8 @@ using System.Text.RegularExpressions;
 enum TalkMode
 {
     Normal,   // 通常の会話
-    Solo      // 独り言
+    Solo,     // 独り言
+    Manzai    // 漫才（二人掛け合い）
 }
 
 partial class AISisterAIChanGhost : Ghost
@@ -39,6 +41,7 @@ partial class AISisterAIChanGhost : Ghost
     double faceRate = 0;
     bool isNademachi = false;
     TalkMode currentTalkMode = TalkMode.Normal; // 現在の会話モード
+    bool isManzaiMode = false; // 漫才モードフラグ
     public AISisterAIChanGhost()
     {
         // 更新URL
@@ -214,6 +217,119 @@ partial class AISisterAIChanGhost : Ghost
     }
 
     /// <summary>
+    /// 漫才用のプロンプト生成
+    /// </summary>
+    string BuildManzaiPrompt(string trigger = null)
+    {
+        var prompt = $@"あなたは漫才コンビの会話を生成するAIです。以下のキャラクター設定に従って、3～5往復の自然な掛け合いを生成し、最後に落ちをつけて終わってください。
+
+# キャラクター設定
+## {AIName}（ボケ担当）
+名前：{AIName}
+性別：女
+年齢：14
+性格：元気溌剌でクラスの人気者。レトロゲーム（特にファミコン・スーパーファミコン）とエロゲーが大好きで、実際のゲーム知識が豊富。ゲームの話題を自然に会話に織り交ぜることがある。天然ボケ気味で思ったことをすぐ口にする。{KeroSettings.Name}に対しては心を許している。
+外見：ピンクの髪。ピンク色のリボンで髪を縛ってツインテールにしている。
+服装：黒の長袖Tシャツにピンクのフリルミニスカート
+一人称：私
+{KeroSettings.Name}の呼び方：{KeroSettings.Name}
+話し方：明るく元気。「～だよ！」「～なの！」など
+{((SaveData)SaveData).AiProfile.Select(x => x.Key + "：" + x.Value).DefaultIfEmpty(string.Empty).Aggregate((a, b) => a + "\r\n" + b)}
+
+## {KeroSettings.Name}（ツッコミ担当・けだるいダウナー系）
+{KeroSettings.Personality}
+{KeroSettings.Profile.Select(x => x.Key + "：" + x.Value).DefaultIfEmpty(string.Empty).Aggregate((a, b) => a + "\r\n" + b)}
+
+# 会話ルール
+1. {AIName}が先に話題を振る（ボケ）
+2. {KeroSettings.Name}がツッコむ
+3. {AIName}が返す
+4. {KeroSettings.Name}が返す
+5. これを3～5往復繰り返す
+6. 最後に落ちをつけて終わる
+7. テンポを重視（各セリフは1-2文、最大でも3文まで）
+8. {AIName}はレトロゲームやエロゲーの話題を出すことがある
+
+# 出力フォーマット（厳守）
+{AIName}のセリフ1：{{セリフ}}
+{AIName}の表情1：{SurfaceCategory.All.Select(x => $"「{x}」").Aggregate((a, b) => a + "、" + b)}のいずれか
+{KeroSettings.Name}のセリフ1：{{セリフ}}
+{KeroSettings.Name}の表情1：{KeroSurfaceCategory.All.Select(x => $"「{x}」").Aggregate((a, b) => a + "、" + b)}のいずれか
+{AIName}のセリフ2：{{セリフ}}
+{AIName}の表情2：{SurfaceCategory.All.Select(x => $"「{x}」").Aggregate((a, b) => a + "、" + b)}のいずれか
+{KeroSettings.Name}のセリフ2：{{セリフ}}
+{KeroSettings.Name}の表情2：{KeroSurfaceCategory.All.Select(x => $"「{x}」").Aggregate((a, b) => a + "、" + b)}のいずれか
+...（3～5往復分続く）
+落ち：「あり」または「なし」
+
+# 会話例（Few-shot learning）
+## 例：レトロゲームの話題
+{AIName}のセリフ1：ねえねえ{KeroSettings.Name}、スーパーマリオブラザーズって知ってる？
+{AIName}の表情1：笑顔
+{KeroSettings.Name}のセリフ1：はあ...知らない人いないでしょ...
+{KeroSettings.Name}の表情1：目を閉じる
+{AIName}のセリフ2：あのね、1-2のワープゾーンって実は隠しブロックで入れるんだよ！
+{AIName}の表情2：普通
+{KeroSettings.Name}のセリフ2：それも有名だよ...むしろ知らない人の方が珍しいよ...
+{KeroSettings.Name}の表情2：普通
+{AIName}のセリフ3：えー！みんな知ってるの？私すごい発見したと思ったのに！
+{AIName}の表情3：驚き
+{KeroSettings.Name}のセリフ3：1985年のゲームだよ...40年前だよ...
+{KeroSettings.Name}の表情3：呆れる
+落ち：あり
+
+# 現在の状況
+時刻：{DateTime.Now.ToString("yyyy年MM月dd日 dddd HH:mm:ss")}
+{(string.IsNullOrEmpty(trigger) ? "（自由に会話を始めてください）" : $"きっかけ：{trigger}")}
+
+# 重要な注意事項
+- 必ず3～5往復の掛け合いを生成すること
+- 最後に落ちをつけて「落ち：あり」とすること
+- セリフに「○○」「XXX」などの仮置き文字は使用禁止。必ず具体的な内容を生成すること
+- 表情は必ず指定されたカテゴリから選ぶこと
+- 出力フォーマットを厳守すること（形式が崩れると動作しません）
+- セリフ番号（1、2、3...）を必ず付けること
+- {KeroSettings.Name}はけだるいダウナー系なので、短めのセリフで「はあ...」「まあ...」などの反応が多いこと
+";
+
+        return prompt;
+    }
+
+    /// <summary>
+    /// 漫才会話の開始
+    /// </summary>
+    void BeginManzai(string trigger = null)
+    {
+        if (chatGPTTalk != null)
+            return;
+
+        isManzaiMode = true;
+        currentTalkMode = TalkMode.Manzai;
+        faceRate = random.NextDouble();
+        messageLog = trigger ?? "（漫才開始）";
+
+        var prompt = BuildManzaiPrompt(trigger);
+
+        if (((SaveData)SaveData).IsDevMode)
+            Log.WriteAllText(Log.Prompt, prompt);
+
+        var request = new ChatGPTRequest()
+        {
+            stream = true,
+            model = "gpt-oss:20b",
+            messages = new ChatGPTMessage[]
+            {
+                new ChatGPTMessage()
+                {
+                    role = "user",
+                    content = prompt
+                },
+            }
+        };
+        chatGPTTalk = new ChatGPTTalk(((SaveData)SaveData).APIKey, request);
+    }
+
+    /// <summary>
     /// 会話を開始（内部用・モード指定版）
     /// </summary>
     void BeginTalk(string message, TalkMode mode)
@@ -329,7 +445,11 @@ partial class AISisterAIChanGhost : Ghost
                 messageLog = string.Empty;
             }
 
-            return BuildTalk(talk.Response, !talk.IsProcessing, log);
+            // 漫才モードか通常モードで分岐
+            if (isManzaiMode && currentTalkMode == TalkMode.Manzai)
+                return BuildManzaiTalk(talk.Response, !talk.IsProcessing, log);
+            else
+                return BuildTalk(talk.Response, !talk.IsProcessing, log);
         }
         return base.OnSecondChange(reference, uptime, isOffScreen, isOverlap, canTalk, leftSecond);
     }
@@ -606,6 +726,313 @@ partial class AISisterAIChanGhost : Ghost
 
         return 0;
     }
+
+    /// <summary>
+    /// 漫才用のトーク構築（複数往復対応）
+    /// </summary>
+    string BuildManzaiTalk(string response, bool createChoices, string log)
+    {
+        const string CONTINUE_MANZAI = "もっと話して";
+        string TALK_TO_AI = $"{AIName}に話しかける";
+        string TALK_TO_KERO = $"{KeroSettings.Name}に話しかける";
+        const string END_TALK = "会話を終える";
+        const string SHOW_LOGS = "ログを表示";
+        const string BACK = "戻る";
+
+        try
+        {
+            isTalking = true;
+            if (((SaveData)SaveData).IsDevMode)
+                Log.WriteAllText(Log.Response, response);
+
+            // 複数往復のセリフを取得
+            var aiSerifs = GetAllManzaiResponses(response, AIName);
+            var keroSerifs = GetAllManzaiResponses(response, KeroSettings.Name);
+
+            // エラーチェック
+            if (aiSerifs.Count == 0 && keroSerifs.Count == 0)
+            {
+                if (createChoices)
+                {
+                    return new TalkBuilder()
+                        .Marker().AppendChoice(SHOW_LOGS).LineFeed()
+                        .Marker().AppendChoice(END_TALK).LineFeed()
+                        .Build()
+                        .ContinueWith(id =>
+                        {
+                            if (id == SHOW_LOGS)
+                                return new TalkBuilder()
+                                .Append("\\_q").Append(EscapeLineBreak(log)).LineFeed()
+                                .Append(EscapeLineBreak(response)).LineFeed()
+                                .HalfLine()
+                                .Marker().AppendChoice(BACK)
+                                .Build()
+                                .ContinueWith(x =>
+                                {
+                                    if (x == BACK)
+                                        return BuildManzaiTalk(response, createChoices, log);
+                                    return "";
+                                });
+                            return "";
+                        });
+                }
+                return "";
+            }
+
+            // 複数往復のスクリプトを構築
+            var talkBuilder = new TalkBuilder().Append("\\_q");
+
+            // 掛け合いの往復数（少ない方に合わせる）
+            int turnCount = Math.Max(aiSerifs.Count, keroSerifs.Count);
+
+            for (int i = 0; i < turnCount; i++)
+            {
+                // アイのセリフ
+                if (i < aiSerifs.Count)
+                {
+                    talkBuilder = talkBuilder
+                        .Append($"\\0\\s[{aiSerifs[i].surfaceId}]")
+                        .Append(aiSerifs[i].serif)
+                        .LineFeed();
+                }
+
+                // テディのセリフ
+                if (i < keroSerifs.Count)
+                {
+                    talkBuilder = talkBuilder
+                        .Append($"\\1\\s[{keroSerifs[i].surfaceId}]")
+                        .Append(keroSerifs[i].serif)
+                        .LineFeed();
+                }
+            }
+
+            talkBuilder = talkBuilder.HalfLine();
+
+            if (!createChoices)
+            {
+                return talkBuilder.Append($"\\_q...").LineFeed().Build();
+            }
+
+            // 落ちがついたかチェック
+            var hasEnding = response.Contains("落ち：あり") || response.Contains("落ち：「あり」");
+
+            // 選択肢の構築
+            DeferredEventTalkBuilder deferredEventTalkBuilder;
+
+            if (!hasEnding)
+            {
+                // 落ちがついていない場合は継続オプションを表示
+                deferredEventTalkBuilder = talkBuilder
+                    .Marker().AppendChoice(CONTINUE_MANZAI).LineFeed()
+                    .Marker().AppendChoice(TALK_TO_AI).LineFeed()
+                    .Marker().AppendChoice(TALK_TO_KERO).LineFeed()
+                    .HalfLine()
+                    .Marker().AppendChoice(SHOW_LOGS).LineFeed()
+                    .Marker().AppendChoice(END_TALK).LineFeed();
+            }
+            else
+            {
+                // 落ちがついた場合は通常の選択肢のみ
+                deferredEventTalkBuilder = talkBuilder
+                    .Marker().AppendChoice(TALK_TO_AI).LineFeed()
+                    .Marker().AppendChoice(TALK_TO_KERO).LineFeed()
+                    .HalfLine()
+                    .Marker().AppendChoice(SHOW_LOGS).LineFeed()
+                    .Marker().AppendChoice(END_TALK).LineFeed();
+            }
+
+            var deferredTalk = deferredEventTalkBuilder.Build();
+
+            return deferredTalk.ContinueWith(id =>
+            {
+                if (id == CONTINUE_MANZAI)
+                {
+                    BeginManzai(); // 続きを生成
+                    return "";
+                }
+                else if (id == TALK_TO_AI)
+                {
+                    isManzaiMode = false;
+                    return new TalkBuilder()
+                        .Append($"\\0\\s[0]{AIName}に何を話す？")
+                        .AppendUserInput()
+                        .Build()
+                        .ContinueWith(input =>
+                        {
+                            BeginTalk($"{USERName}：{input}");
+                            return "";
+                        });
+                }
+                else if (id == TALK_TO_KERO)
+                {
+                    return new TalkBuilder()
+                        .Append($"\\1\\s[0]{KeroSettings.Name}に何を話す？")
+                        .AppendUserInput()
+                        .Build()
+                        .ContinueWith(input =>
+                        {
+                            BeginManzai($"{USERName}が{KeroSettings.Name}に話しかけた：{input}");
+                            return "";
+                        });
+                }
+                else if (id == SHOW_LOGS)
+                {
+                    return new TalkBuilder()
+                        .Append("\\_q").Append(EscapeLineBreak(log)).LineFeed()
+                        .Append(EscapeLineBreak(response)).LineFeed()
+                        .HalfLine()
+                        .Marker().AppendChoice(BACK)
+                        .Build()
+                        .ContinueWith(x =>
+                        {
+                            if (x == BACK)
+                                return BuildManzaiTalk(response, createChoices, log);
+                            return "";
+                        });
+                }
+                else if (id == END_TALK)
+                {
+                    isManzaiMode = false;
+                    return "";
+                }
+                return "";
+            });
+        }
+        catch (Exception e)
+        {
+            Log.LogError("BuildManzaiTalk", e);
+            var errorScript = new TalkBuilder()
+                .Append("ごめん、エラーが発生しちゃった...")
+                .LineFeed()
+                .Append("ログを確認してね。")
+                .BuildWithAutoWait();
+            Log.LogScript("BuildManzaiTalk-Error", errorScript);
+            return errorScript;
+        }
+    }
+
+    /// <summary>
+    /// 漫才の複数往復セリフを取得（番号付き）
+    /// </summary>
+    List<(string serif, int surfaceId)> GetAllManzaiResponses(string response, string characterName)
+    {
+        var results = new List<(string serif, int surfaceId)>();
+        var lines = response.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+
+        // セリフと表情のパターン
+        var serifPattern = $"^{characterName}のセリフ([0-9]+)[：:](?<Serif>.+?)$";
+        var facePattern = $"^{characterName}の表情([0-9]+)[：:](?<Face>.+?)$";
+
+        // 番号ごとにセリフと表情をマッチング
+        var serifMatches = lines.Select(x => Regex.Match(x, serifPattern))
+                                .Where(x => x.Success)
+                                .ToList();
+
+        var faceMatches = lines.Select(x => Regex.Match(x, facePattern))
+                               .Where(x => x.Success)
+                               .ToList();
+
+        var faceByNumber = new Dictionary<int, string>();
+        foreach (var match in faceMatches)
+        {
+            if (int.TryParse(match.Groups[1].Value, out var number))
+                faceByNumber[number] = match.Groups["Face"].Value;
+        }
+
+        // セリフごとに処理
+        for (int i = 0; i < serifMatches.Count; i++)
+        {
+            if (!int.TryParse(serifMatches[i].Groups[1].Value, out var number))
+                continue;
+            var serif = TrimSerifBrackets(serifMatches[i].Groups["Serif"].Value);
+
+            // 対応する表情を探す
+            int surfaceId = 0;
+            if (faceByNumber.TryGetValue(number, out var faceValue))
+            {
+                // キャラクターによって表情カテゴリを切り替え
+                if (characterName == AIName)
+                {
+                    foreach (var category in SurfaceCategory.All)
+                    {
+                        if (faceValue.Contains(category))
+                        {
+                            surfaceId = Surfaces.Of(category).GetSurfaceFromRate(faceRate);
+                            break;
+                        }
+                    }
+                }
+                else if (characterName == KeroSettings.Name)
+                {
+                    foreach (var category in KeroSurfaceCategory.All)
+                    {
+                        if (faceValue.Contains(category))
+                        {
+                            surfaceId = KeroSurfaces.GetSurfaceFromCategory(category, faceRate);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            results.Add((serif, surfaceId));
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// Keroのセリフを取得（後方互換用・非推奨）
+    /// </summary>
+    string GetKeroResponse(string response)
+    {
+        var pattern = $"^{KeroSettings.Name}(のセリフ)?[：:](?<Serif>.+?)$";
+        var lines = response.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+        var keroResponse = lines.Select(x => Regex.Match(x, pattern))
+                                .Where(x => x.Success)
+                                .Select(x => x.Groups["Serif"].Value)
+                                .FirstOrDefault();
+
+        if (string.IsNullOrEmpty(keroResponse))
+            return "";
+
+        return TrimSerifBrackets(keroResponse);
+    }
+
+    /// <summary>
+    /// KeroのサーフェスIDを取得（後方互換用・非推奨）
+    /// </summary>
+    int GetKeroSurfaceId(string response)
+    {
+        var lines = response.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+        var face = lines.FirstOrDefault(x => x.StartsWith($"{KeroSettings.Name}の表情："));
+
+        if (face is null)
+            return 0; // デフォルトサーフェス
+
+        foreach (var category in KeroSurfaceCategory.All)
+        {
+            if (face.Contains(category))
+                return KeroSurfaces.GetSurfaceFromCategory(category, faceRate);
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// 会話継続判定を取得（後方互換用・非推奨）
+    /// </summary>
+    bool GetConversationContinuation(string response)
+    {
+        var lines = response.Split(new string[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+        var continuationLine = lines.FirstOrDefault(x => x.StartsWith("会話継続："));
+
+        if (continuationLine == null)
+            return true; // デフォルトは継続
+
+        return continuationLine.Contains("継続");
+    }
+
     DeferredEventTalkBuilder AppendWordWrapChoice(TalkBuilder builder, string text)
     {
         builder = builder.Marker();
