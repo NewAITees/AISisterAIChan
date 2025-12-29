@@ -1,4 +1,5 @@
 #r "Rosalind.dll"
+#r "Newtonsoft.Json.dll"
 #load "SaveData.csx"
 #load "ChatGPT.csx"
 #load "CollisionParts.csx"
@@ -280,7 +281,51 @@ partial class AISisterAIChanGhost : Ghost
             {
                 foreach(var choice in onichanResponse)
                     talkBuilder = talkBuilder.Marker().Append(choice).LineFeed();
-                return talkBuilder.Append($"\\_q...").LineFeed().Build();
+                var generatedScript = talkBuilder.Append($"\\_q...").LineFeed().Build();
+
+                // デバッグ用：生成されたスクリプトをJSONログとして保存
+                try
+                {
+                    var encoding = Encoding.UTF8;
+                    var bytes = encoding.GetBytes(generatedScript ?? "");
+                    var rawBytesStr = bytes.Length > 0 ? string.Join(" ", bytes.Select(b => b.ToString("X2"))) : "";
+
+                    var logData = new
+                    {
+                        timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                        mode = "NormalWaiting",
+                        aiResponse = aiResponse ?? "",
+                        surfaceId = surfaceId,
+                        generatedScript = generatedScript ?? "",
+                        scriptLength = generatedScript?.Length ?? 0,
+                        hasEndTag = generatedScript?.Contains("\\e") ?? false,
+                        rawBytes = rawBytesStr
+                    };
+
+                    var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
+                    File.WriteAllText("normal_waiting_script_log.json", json, encoding);
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        var encoding = Encoding.UTF8;
+                        var errorLog = new
+                        {
+                            timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                            location = "NormalWaiting mode - BuildTalk",
+                            errorType = ex.GetType().FullName,
+                            errorMessage = ex.Message,
+                            stackTrace = ex.StackTrace ?? "",
+                            innerException = ex.InnerException?.ToString() ?? ""
+                        };
+                        var errorJson = Newtonsoft.Json.JsonConvert.SerializeObject(errorLog, Newtonsoft.Json.Formatting.Indented);
+                        File.WriteAllText("normal_waiting_error.json", errorJson, encoding);
+                    }
+                    catch { }
+                }
+
+                return generatedScript;
             }
 
             if (createChoices && string.IsNullOrEmpty(aiResponse))
@@ -324,10 +369,48 @@ partial class AISisterAIChanGhost : Ghost
             else
                 deferredEventTalkBuilder = deferredEventTalkBuilder.Marker().AppendChoice(SHOW_LOGS).LineFeed();
 
-            return deferredEventTalkBuilder
+            var deferredTalk = deferredEventTalkBuilder
                     .Marker().AppendChoice(END_TALK).LineFeed()
-                    .Build()
-                    .ContinueWith(id =>
+                    .Build();
+
+            // デバッグ用：生成されたDeferredEventTalkをログ保存
+            try
+            {
+                var encoding = Encoding.UTF8;
+                var logData = new
+                {
+                    timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                    mode = "NormalWithChoices",
+                    aiResponse = aiResponse ?? "",
+                    surfaceId = surfaceId,
+                    choiceCount = onichanResponse?.Length ?? 0,
+                    note = "DeferredEventTalk - actual script is not available until user interaction"
+                };
+
+                var json = Newtonsoft.Json.JsonConvert.SerializeObject(logData, Newtonsoft.Json.Formatting.Indented);
+                File.WriteAllText("normal_choices_script_log.json", json, encoding);
+            }
+            catch (Exception ex)
+            {
+                try
+                {
+                    var encoding = Encoding.UTF8;
+                    var errorLog = new
+                    {
+                        timestamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff"),
+                        location = "NormalWithChoices mode - BuildTalk",
+                        errorType = ex.GetType().FullName,
+                        errorMessage = ex.Message,
+                        stackTrace = ex.StackTrace ?? "",
+                        innerException = ex.InnerException?.ToString() ?? ""
+                    };
+                    var errorJson = Newtonsoft.Json.JsonConvert.SerializeObject(errorLog, Newtonsoft.Json.Formatting.Indented);
+                    File.WriteAllText("normal_choices_error.json", errorJson, encoding);
+                }
+                catch { }
+            }
+
+            return deferredTalk.ContinueWith(id =>
                     {
                         if (onichanResponse.Contains(id))
                             BeginTalk($"{log}{AIName}：{aiResponse}\r\n{USERName}：{id}");
