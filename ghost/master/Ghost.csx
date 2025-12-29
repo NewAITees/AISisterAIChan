@@ -273,6 +273,7 @@ partial class AISisterAIChanGhost : Ghost
 
 # 会話履歴
 {messageLog}";
+        }
 
         if (((SaveData)SaveData).IsDevMode)
             Log.WriteAllText(Log.Prompt, prompt);
