@@ -66,15 +66,25 @@ partial class AISisterAIChanGhost : Ghost
 
     public override string OnMouseDoubleClick(IDictionary<int, string> reference, string mouseX, string mouseY, string charId, string partsName, string buttonName, DeviceType deviceType)
     {
-        var parts = CollisionParts.GetCollisionPartsName(partsName);
-        if (parts != null)
+        try
         {
-            BeginTalk($"{USERName}：（{AIName}の{parts}をつつく）");
-            return "";
+            var parts = CollisionParts.GetCollisionPartsName(partsName);
+            if (parts != null)
+            {
+                Log.LogEvent("OnMouseDoubleClick", $"parts={parts}");
+                BeginTalk($"{USERName}：（{AIName}の{parts}をつつく）");
+                return "";
+            }
+            else
+            {
+                Log.LogEvent("OnMouseDoubleClick", "OpenMenu");
+                return OpenMenu();
+            }
         }
-        else
+        catch (Exception ex)
         {
-            return OpenMenu();
+            Log.LogError("OnMouseDoubleClick", ex);
+            return "";
         }
     }
 
@@ -438,7 +448,14 @@ partial class AISisterAIChanGhost : Ghost
         }
         catch (Exception e)
         {
-            return e.ToString();
+            Log.LogError("BuildTalk", e);
+            var errorScript = new TalkBuilder()
+                .Append("ごめん、エラーが発生しちゃった...")
+                .LineFeed()
+                .Append("ログを確認してね。")
+                .BuildWithAutoWait();
+            Log.LogScript("BuildTalk-Error", errorScript);
+            return errorScript;
         }
     }
     string EscapeLineBreak(string text)
