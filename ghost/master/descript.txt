@@ -8,6 +8,6 @@ name,AI妹アイちゃん
 type,ghost
 
 sakura.name,アイ
-kero.name,kero_name
+kero.name,テディ
 
 shiori,SHIOLINK.dll
