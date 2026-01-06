@@ -30,16 +30,30 @@ public class GhostAPIServer : MonoBehaviour
         if (listener != null)
             return;
 
-        listener = new HttpListener();
-        listener.Prefixes.Add(Prefix);
-        listener.Start();
+        try
+        {
+            listener = new HttpListener();
+            listener.Prefixes.Add(Prefix);
+            listener.Start();
 
-        isRunning = true;
-        listenerThread = new Thread(ListenLoop);
-        listenerThread.IsBackground = true;
-        listenerThread.Start();
+            isRunning = true;
+            listenerThread = new Thread(ListenLoop);
+            listenerThread.IsBackground = true;
+            listenerThread.Start();
 
-        Debug.Log("Ghost API Server started: " + Prefix);
+            Debug.Log("Ghost API Server started: " + Prefix);
+        }
+        catch (HttpListenerException ex)
+        {
+            Debug.LogError($"Ghost API Server 起動エラー: {ex.Message}");
+            Debug.LogError($"ポート31555が既に使用されている可能性があります。");
+            Debug.LogError($"対処法: 他のプロセスがポートを使用していないか確認してください。");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogError($"Ghost API Server 起動エラー: {ex.Message}");
+            Debug.LogError($"スタックトレース: {ex.StackTrace}");
+        }
     }
 
     private void StopServer()
