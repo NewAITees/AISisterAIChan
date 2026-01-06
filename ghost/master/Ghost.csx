@@ -18,6 +18,7 @@ using System.Threading.Tasks;
 using System.IO;
 using Shiorose.Resource.ShioriEvent;
 using System.Text.RegularExpressions;
+using Newtonsoft.Json.Linq;
 
 /// <summary>
 /// 会話モードの種類
@@ -42,6 +43,15 @@ partial class AISisterAIChanGhost : Ghost
     bool isNademachi = false;
     TalkMode currentTalkMode = TalkMode.Normal; // 現在の会話モード
     bool isManzaiMode = false; // 漫才モードフラグ
+    class ParsedTalk
+    {
+        public string AiText;
+        public string AiFace;
+        public int? SurfaceId;
+        public string[] Choices;
+        public string Continue;
+        public bool IsJson;
+    }
     public AISisterAIChanGhost()
     {
         // 更新URL
@@ -205,9 +215,13 @@ partial class AISisterAIChanGhost : Ghost
 家族構成：{AIName}、{USERName}、父、母
 
 # 出力フォーマット
-{AIName}のセリフ：{{{AIName}のセリフ}}
-{AIName}の表情：{SurfaceCategory.All.Select(x=>$"「{x}」").Aggregate((a,b)=>a+b)}
-会話継続：「終了」
+以下のJSONのみを返してください（説明文やコードブロックは禁止）:
+{{
+  ""ai_text"": ""{AIName}のセリフ"",
+  ""ai_face"": ""{SurfaceCategory.All.Select(x=>$"「{x}」").Aggregate((a,b)=>a+b)}"",
+  ""continue"": ""終了"",
+  ""choices"": []
+}}
 
 # 会話ルール
 会話継続は必ず「終了」にしてください（独り言なので会話を継続しません）。
@@ -377,13 +391,16 @@ partial class AISisterAIChanGhost : Ghost
 家族構成：{AIName}、{USERName}、父、母
 
 # 出力フォーマット
-{AIName}のセリフ：{{{AIName}のセリフ}}
-{AIName}の表情：{SurfaceCategory.All.Select(x=>$"「{x}」").Aggregate((a,b)=>a+b)}
-会話継続：「継続」「終了」
-{Enumerable.Range(0, ((SaveData)SaveData).ChoiceCount).Select(x => $"{USERName}のセリフ候補{(x + 1)}：{{{USERName}のセリフ}}").DefaultIfEmpty(string.Empty).Aggregate((a, b) => a + "\r\n" + b)}
+以下のJSONのみを返してください（説明文やコードブロックは禁止）:
+{{
+  ""ai_text"": ""{AIName}のセリフ"",
+  ""ai_face"": ""{SurfaceCategory.All.Select(x=>$"「{x}」").Aggregate((a,b)=>a+b)}"",
+  ""continue"": ""継続"" または ""終了"",
+  ""choices"": [""{USERName}のセリフ候補"", ""{USERName}のセリフ候補""]
+}}
 
 # 会話ルール
-会話継続が「終了」の場合、{USERName}のセリフ候補は出力しないでください。
+会話継続が「終了」の場合、choicesは空配列にしてください。
 ○○といった仮置き文字は使用せず、必ず具体的な単語を使用してください。
 {AIName}はレトロゲームとエロゲーが好きなので、会話の中で自然にゲームの話題を出すことがある。話題がなくても、レトロゲームやエロゲーの知識を披露したり、それらに例えたりすることがある。ただし、無理に話題を出すのではなく、自然な流れで会話に織り交ぜること。
 
@@ -475,9 +492,18 @@ partial class AISisterAIChanGhost : Ghost
             if (((SaveData)SaveData).IsDevMode)
                 Log.WriteAllText(Log.Response, response);
 
-            var aiResponse = GetAIResponse(response);
-            var surfaceId = GetSurfaceId(response);
-            var onichanResponse = GetOnichanRenponse(response);
+            var parsed = ParseResponse(response);
+            var aiResponse = parsed.AiText ?? "";
+            var surfaceId = parsed.SurfaceId ?? 0;
+            var onichanResponse = parsed.Choices ?? new string[] { };
+            var shouldContinue = IsConversationContinuation(parsed, response);
+            if (createChoices && string.IsNullOrWhiteSpace(aiResponse))
+            {
+                aiResponse = GetFallbackResponse();
+                if (surfaceId == 0)
+                    surfaceId = Surfaces.Of(SurfaceCategory.Normal).GetSurfaceFromRate(faceRate);
+            }
+            aiResponse = AddNaturalDelays(aiResponse);
             var talkBuilder =
                 new TalkBuilder()
                 .Append($"\\_q\\s[{surfaceId}]")
@@ -495,8 +521,11 @@ partial class AISisterAIChanGhost : Ghost
 
             if (!createChoices)
             {
-                foreach(var choice in onichanResponse)
-                    talkBuilder = talkBuilder.Marker().Append(choice).LineFeed();
+                if (shouldContinue)
+                {
+                    foreach (var choice in onichanResponse)
+                        talkBuilder = talkBuilder.Marker().Append(choice).LineFeed();
+                }
                 var generatedScript = talkBuilder.Append($"\\_q...").LineFeed().Build();
 
                 // デバッグ用：生成されたスクリプトをJSONログとして保存
@@ -544,31 +573,8 @@ partial class AISisterAIChanGhost : Ghost
                 return generatedScript;
             }
 
-            if (createChoices && string.IsNullOrEmpty(aiResponse))
-                 return new TalkBuilder()
-                    .Marker().AppendChoice(SHOW_LOGS).LineFeed()
-                    .Marker().AppendChoice(END_TALK).LineFeed()
-                    .Build()
-                    .ContinueWith(id =>
-                    {
-                        if (id == SHOW_LOGS)
-                            return new TalkBuilder()
-                            .Append("\\_q").Append(EscapeLineBreak(log)).LineFeed()
-                            .Append(EscapeLineBreak(response)).LineFeed()
-                            .HalfLine()
-                            .Marker().AppendChoice(BACK)
-                            .Build()
-                            .ContinueWith(x =>
-                            {
-                                if (x == BACK)
-                                    return BuildTalk(response, createChoices, log);
-                                return "";
-                            });
-                        return "";
-                    });
-
             DeferredEventTalkBuilder deferredEventTalkBuilder = null;
-            if (onichanResponse.Length > 0)
+            if (shouldContinue && onichanResponse.Length > 0)
             {
                 foreach (var choice in onichanResponse.Take(3))
                 {
@@ -732,6 +738,262 @@ partial class AISisterAIChanGhost : Ghost
         }
 
         return 0;
+    }
+
+    bool IsConversationContinuation(ParsedTalk parsed, string response)
+    {
+        if (currentTalkMode == TalkMode.Solo)
+            return false;
+
+        if (parsed != null && !string.IsNullOrWhiteSpace(parsed.Continue))
+            return !parsed.Continue.Contains("終了");
+
+        if (parsed != null && parsed.IsJson)
+            return true;
+
+        return GetConversationContinuation(response);
+    }
+
+    string GetFallbackResponse()
+    {
+        string[] fallbackMessages = new string[]
+        {
+            "ごめんね、ちょっと考えがまとまらなくて…",
+            "えっと、もう一度言ってくれる？",
+            "あれ、今なんて言ったの？",
+            "ちょっと調子悪いかも…もう一回お願い！"
+        };
+        return fallbackMessages[random.Next(fallbackMessages.Length)];
+    }
+
+    string AddNaturalDelays(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        text = Regex.Replace(text, "([。！？])", m => m.Groups[1].Value + "\\_w[400]");
+        text = Regex.Replace(text, "([、,])", m => m.Groups[1].Value + "\\_w[250]");
+        text = Regex.Replace(text, "(ええと|あの|えっと|うーん)", m => m.Groups[1].Value + "\\_w[150]");
+        text = Regex.Replace(text, "(…{1,3})", m => m.Groups[1].Value + "\\_w[800]");
+        text = Regex.Replace(text, "(ね|よね|かな)\\?", m => "\\_w[150]" + m.Groups[1].Value + "?");
+
+        return text;
+    }
+
+    int ResolveSurfaceIdFromFace(string faceValue)
+    {
+        if (string.IsNullOrWhiteSpace(faceValue))
+            return 0;
+        var normalizedCategory = NormalizeFaceCategory(faceValue);
+        if (!string.IsNullOrEmpty(normalizedCategory))
+            return Surfaces.Of(normalizedCategory).GetSurfaceFromRate(faceRate);
+
+        foreach (var category in SurfaceCategory.All)
+        {
+            if (faceValue.Contains(category))
+                return Surfaces.Of(category).GetSurfaceFromRate(faceRate);
+        }
+        return 0;
+    }
+
+    string NormalizeFaceCategory(string faceValue)
+    {
+        if (string.IsNullOrWhiteSpace(faceValue))
+            return null;
+
+        var value = faceValue.Trim();
+
+        var lower = value.ToLowerInvariant();
+        if (lower == "normal" || lower == "neutral")
+            return SurfaceCategory.Normal;
+        if (lower == "happy" || lower == "smile" || lower == "joy")
+            return SurfaceCategory.Smile;
+        if (lower == "sad" || lower == "cry")
+            return SurfaceCategory.Sad;
+        if (lower == "angry" || lower == "anger" || lower == "mad")
+            return SurfaceCategory.Anger;
+        if (lower == "surprise" || lower == "surprised")
+            return SurfaceCategory.Surprise;
+        if (lower == "shy" || lower == "embarrassed")
+            return SurfaceCategory.Embarrassed;
+        if (lower == "bashful")
+            return SurfaceCategory.Bashful;
+        if (lower == "amazed" || lower == "tired" || lower == "weary")
+            return SurfaceCategory.Amazed;
+        if (lower == "close_eyes" || lower == "closeeyes" || lower == "sleepy")
+            return SurfaceCategory.CloseEyes;
+        if (lower == "pale")
+            return SurfaceCategory.Pale;
+        if (lower == "ecstatic")
+            return SurfaceCategory.Ecstatic;
+        if (lower == "sensitive" || lower == "lewd")
+            return SurfaceCategory.Sensitive;
+
+        return null;
+    }
+
+    ParsedTalk ParseResponse(string response)
+    {
+        if (TryParseJsonResponse(response, out var parsed))
+        {
+            if (!parsed.SurfaceId.HasValue)
+                parsed.SurfaceId = ResolveSurfaceIdFromFace(parsed.AiFace);
+            return parsed;
+        }
+
+        return new ParsedTalk
+        {
+            AiText = GetAIResponse(response),
+            AiFace = null,
+            SurfaceId = GetSurfaceId(response),
+            Choices = GetOnichanRenponse(response),
+            Continue = null,
+            IsJson = false
+        };
+    }
+
+    bool TryParseJsonResponse(string response, out ParsedTalk parsed)
+    {
+        parsed = new ParsedTalk();
+        var json = ExtractJsonPayload(response);
+        if (string.IsNullOrWhiteSpace(json))
+            return false;
+
+        JToken token;
+        try
+        {
+            token = JToken.Parse(json);
+        }
+        catch
+        {
+            return false;
+        }
+
+        parsed.IsJson = true;
+
+        if (token.Type == JTokenType.Object)
+            return ParseJsonObject((JObject)token, parsed);
+
+        if (token.Type == JTokenType.Array)
+            return ParseJsonArray((JArray)token, parsed);
+
+        return false;
+    }
+
+    bool ParseJsonObject(JObject obj, ParsedTalk parsed)
+    {
+        parsed.AiText = (string)obj["ai_text"] ?? (string)obj["text"] ?? "";
+        parsed.AiFace = (string)obj["ai_face"];
+        parsed.SurfaceId = TryParseSurfaceId(obj["surface"]) ?? TryParseSurfaceId(obj["surface_id"]);
+        parsed.Continue = (string)obj["continue"] ?? (string)obj["continuation"];
+        parsed.Choices = ParseChoices(obj["choices"]);
+
+        return !string.IsNullOrWhiteSpace(parsed.AiText) || (parsed.Choices != null && parsed.Choices.Length > 0);
+    }
+
+    bool ParseJsonArray(JArray array, ParsedTalk parsed)
+    {
+        if (array.Count == 0)
+            return false;
+
+        var hasSpeaker = array.Children<JObject>().Any(x => x["speaker"] != null);
+        if (!hasSpeaker)
+        {
+            var firstObj = array.Children<JObject>().FirstOrDefault();
+            if (firstObj == null)
+                return false;
+            return ParseJsonObject(firstObj, parsed);
+        }
+
+        var aiTexts = new List<string>();
+        var choices = new List<string>();
+
+        foreach (var obj in array.Children<JObject>())
+        {
+            var speakerToken = obj["speaker"];
+            var speaker = speakerToken != null ? (int?)speakerToken.Value<int>() : null;
+            var text = (string)obj["text"] ?? (string)obj["ai_text"];
+            if (string.IsNullOrWhiteSpace(text))
+                continue;
+
+            if (speaker == 1)
+                choices.Add(text);
+            else
+                aiTexts.Add(text);
+
+            if (!parsed.SurfaceId.HasValue)
+                parsed.SurfaceId = TryParseSurfaceId(obj["surface"]);
+            if (string.IsNullOrEmpty(parsed.AiFace))
+                parsed.AiFace = (string)obj["ai_face"] ?? (string)obj["emotion"];
+        }
+
+        parsed.AiText = string.Join(" ", aiTexts);
+        parsed.Choices = choices.ToArray();
+
+        return !string.IsNullOrWhiteSpace(parsed.AiText) || parsed.Choices.Length > 0;
+    }
+
+    string[] ParseChoices(JToken choicesToken)
+    {
+        if (choicesToken == null || choicesToken.Type != JTokenType.Array)
+            return new string[] { };
+        return choicesToken.Values<string>()
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .ToArray();
+    }
+
+    int? TryParseSurfaceId(JToken token)
+    {
+        if (token == null)
+            return null;
+        if (token.Type == JTokenType.Integer)
+            return token.Value<int>();
+        if (token.Type == JTokenType.String)
+        {
+            var value = token.Value<string>();
+            if (int.TryParse(value, out var surfaceId))
+                return surfaceId;
+            return ResolveSurfaceIdFromFace(value);
+        }
+        return null;
+    }
+
+    string ExtractJsonPayload(string response)
+    {
+        if (string.IsNullOrWhiteSpace(response))
+            return null;
+
+        var blockMatch = Regex.Match(
+            response,
+            "```(?:json)?\\s*(\\{[\\s\\S]*?\\}|\\[[\\s\\S]*?\\])\\s*```",
+            RegexOptions.IgnoreCase);
+        if (blockMatch.Success)
+            return blockMatch.Groups[1].Value;
+
+        var firstObj = response.IndexOf('{');
+        var firstArr = response.IndexOf('[');
+        var start = -1;
+        var endChar = '}';
+
+        if (firstArr >= 0 && (firstArr < firstObj || firstObj < 0))
+        {
+            start = firstArr;
+            endChar = ']';
+        }
+        else if (firstObj >= 0)
+        {
+            start = firstObj;
+            endChar = '}';
+        }
+
+        if (start < 0)
+            return null;
+
+        var end = response.LastIndexOf(endChar);
+        if (end <= start)
+            return null;
+
+        return response.Substring(start, end - start + 1);
     }
 
     /// <summary>
